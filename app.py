@@ -38,30 +38,35 @@ with tab_kontrol:
 
     if baslat:
         durum_metni = st.empty()
-        ilerleme = st.progress(0)
+        # 🚨 YENİ: İçi metin dolu ilerleme çubuğu
+        ilerleme_cubugu = st.progress(0, text="%0 - Sistem Başlatılıyor...")
+        
+        # 🚨 YENİ: Callback (Geri Çağırım) Fonksiyonumuz
+        def anlik_ilerleme(yuzde, mesaj):
+            guvenli_yuzde = max(0, min(100, int(yuzde))) # Yüzdeyi 0-100 arasında sabitler
+            ilerleme_cubugu.progress(guvenli_yuzde, text=f"%{guvenli_yuzde} - {mesaj}")
+            durum_metni.info(mesaj)
         
         try:
             tarih_str = tarih.strftime("%Y-%m-%d")
             
-            durum_metni.info("Veritabanı bağlantıları kontrol ediliyor...")
-            ilerleme.progress(10)
+            anlik_ilerleme(5, "Veritabanı bağlantıları kontrol ediliyor...")
             veritabani_kur()
             
-            durum_metni.info(f"Selenium Başlatıldı. {tarih_str} | {hipodrom} programı TJK'dan arka planda (Headless) çekiliyor...")
-            ilerleme.progress(30)
-            tjk_veri_cek(tarih_str, hipodrom)
+            # TJK Veri Çekme Motoruna "anlik_ilerleme" fonksiyonumuzu gönderiyoruz!
+            tjk_veri_cek(tarih_str, hipodrom, anlik_ilerleme)
             
-            durum_metni.info("Veritabanından geçmiş koşular okunuyor ve JOKEY ZEKASI hesaba katılıyor...")
-            ilerleme.progress(50)
+            anlik_ilerleme(72, "Veritabanından geçmiş koşular okunuyor ve JOKEY ZEKASI hesaba katılıyor...")
             X, y = verileri_hazirla()
             
             if X is None or X.empty:
                 st.error("❌ Model eğitimi için havuzda yeterli veri bulunamadı.")
                 st.stop()
                 
-            durum_metni.info(f"Yapay Zeka ({model_tipi}) 14 Boyutlu Matris Üzerinden Öğreniyor...")
+            anlik_ilerleme(75, f"Yapay Zeka ({model_tipi}) 14 Boyutlu Matris Üzerinden Öğreniyor...")
             yz_model = modeli_egit(X, y, model_tipi)
-            ilerleme.progress(70)
+            
+            anlik_ilerleme(85, "Bugünkü koşular analiz ediliyor...")
             
             conn = sqlite3.connect("tjk_arastirma_merkezi.db")
             cursor = conn.cursor()
@@ -74,7 +79,10 @@ with tab_kontrol:
                 st.stop()
             
             gercek_olasiliklar = []
-            for kosu in kosular[:6]:
+            for index, kosu in enumerate(kosular[:6]):
+                # Her ayak analiz edildiğinde barı biraz daha doldur
+                anlik_ilerleme(85 + int((index/6)*10), f"Yapay Zeka {index+1}. Ayağı süzgeçten geçiriyor...")
+                
                 yaris_id = kosu[0]
                 cursor.execute("SELECT DISTINCT at_adi, kilo, hp, jokey FROM Sonuclar WHERE yaris_id = ?", (yaris_id,))
                 atlar = cursor.fetchall()
@@ -145,13 +153,12 @@ with tab_kontrol:
             st.session_state['son_analiz'] = gercek_olasiliklar
             st.session_state['son_model_adi'] = model_tipi.split(" (")[0]
 
-            durum_metni.info("Bütçe ve Risk Profiline göre kombinasyonlar optimize ediliyor...")
-            ilerleme.progress(90)
+            anlik_ilerleme(96, "Bütçe ve Risk Profiline göre şablon kombinasyonu optimize ediliyor...")
             
             kupon, maliyet = optimum_kupon(gercek_olasiliklar, butce, risk, birim_fiyat)
             
-            ilerleme.progress(100)
-            durum_metni.success("✅ Tüm işlemler başarıyla tamamlandı!")
+            anlik_ilerleme(100, "✅ Şablon Başarıyla Üretildi!")
+            durum_metni.success("✅ Şablon Başarıyla Üretildi!")
             
             st.subheader(f"🎯 2. ALTILI GANYAN ŞABLONU ({st.session_state['son_model_adi']})")
             st.write(f"**Hesaplanan Maliyet:** {maliyet:.2f} TL (Birim Fiyat: {birim_fiyat} TL)")
