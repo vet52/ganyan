@@ -10,9 +10,9 @@ from feature_engineering import verileri_hazirla
 from model_motoru import modeli_egit
 from kupon_motoru import optimum_kupon
 
-st.set_page_config(page_title="TJK Yapay Zeka Botu", page_icon="🐎", layout="wide")
+st.set_page_config(page_title="TJK Yapay Zeka Botu", page_icon="🏇🏿", layout="wide")
 
-st.title("🐎 TJK Yapay Zeka & Optimizasyon Merkezi")
+st.title("🏇🏿 TJK Yapay Zeka & Optimizasyon Merkezi 🏇🏿")
 st.markdown("Veri bilimi ve makine öğrenmesi destekli profesyonel altılı ganyan tahmin motoru.")
 
 tab_kontrol, tab_analiz, tab_gecmis = st.tabs(["⚙️ Kontrol Paneli", "📊 Olasılık Analizi", "📜 Kupon Geçmişi"])
