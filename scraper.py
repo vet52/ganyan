@@ -9,12 +9,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 
-def tjk_veri_cek(tarih, hipodrom_adi):
-    print(f"[{tarih}] {hipodrom_adi} verileri TJK üzerinden çekiliyor...")
+# 🚨 YENİ: "ilerleme_fonksiyonu" parametresi eklendi
+def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
+    if ilerleme_fonksiyonu: ilerleme_fonksiyonu(10, "Hayalet Tarayıcı (Chrome) Başlatılıyor...")
     
     chrome_options = Options()
-    
-    # 🚨 BULUT (STREAMLIT CLOUD) HAYALET MOD AYARLARI 🚨
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--disable-gpu") 
     chrome_options.add_argument("--disable-software-rasterizer") 
@@ -28,9 +27,6 @@ def tjk_veri_cek(tarih, hipodrom_adi):
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--disable-extensions")
     
-    # 🚨 HATA ÇÖZÜMÜ BURADA: webdriver_manager İPTAL EDİLDİ 🚨
-    # Artık internetten uyumsuz sürüm aramak yerine, doğrudan packages.txt ile 
-    # kurulan %100 uyumlu sistem sürücüsünü hedef gösteriyoruz!
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
@@ -45,6 +41,7 @@ def tjk_veri_cek(tarih, hipodrom_adi):
         tjk_tarih_formati = f"{gun}/{ay}/{yil}"
         hedef_url = "https://www.tjk.org/TR/YarisSever/Info/Page/GunlukYarisProgrami"
         
+        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(12, f"TJK Sunucularına Bağlanılıyor: {hipodrom_adi}...")
         driver.get(hedef_url)
         time.sleep(2) 
         
@@ -60,7 +57,7 @@ def tjk_veri_cek(tarih, hipodrom_adi):
         toplam_kosu = len(kosu_tablolari)
         
         if toplam_kosu == 0:
-            print("[-] Bu hipodromda koşu tablosu bulunamadı.")
+            if ilerleme_fonksiyonu: ilerleme_fonksiyonu(100, "HATA: Bu hipodromda koşu tablosu bulunamadı.")
             return
 
         baslangic_indeksi = max(0, toplam_kosu - 6)
@@ -75,10 +72,16 @@ def tjk_veri_cek(tarih, hipodrom_adi):
         toplanan_atlar_ve_linkler = []
         kayit_sayisi = 0
         
-        for kosu_indeks in range(baslangic_indeksi, toplam_kosu):
+        toplam_hedef_kosu = toplam_kosu - baslangic_indeksi
+        for islem_sirasi, kosu_indeks in enumerate(range(baslangic_indeksi, toplam_kosu)):
             gercek_kosu_no = kosu_indeks + 1
             yaris_id = f"{tarih}_{hipodrom_adi}_K{gercek_kosu_no}"
             
+            # 🚨 YENİ: FAZ 1 (Koşular) İlerlemesi (%15 ile %25 arası)
+            if ilerleme_fonksiyonu: 
+                yuzde = 15 + int((islem_sirasi / max(1, toplam_hedef_kosu)) * 10)
+                ilerleme_fonksiyonu(yuzde, f"Faz 1: {islem_sirasi+1}. Ayak bülteni çekiliyor...")
+
             cursor.execute("INSERT OR IGNORE INTO Yarislar (yaris_id, tarih, hipodrom, pist, mesafe) VALUES (?, ?, ?, 'Kum', 1200)", (yaris_id, tarih, hipodrom_adi))
             
             guncel_tablo = driver.find_elements(By.XPATH, "//table[.//td[contains(@class, 'AtAdi')]]")[kosu_indeks]
@@ -129,7 +132,15 @@ def tjk_veri_cek(tarih, hipodrom_adi):
                 
         conn.commit()
 
-        for at in toplanan_atlar_ve_linkler:
+        toplam_at = len(toplanan_atlar_ve_linkler)
+        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(25, f"Faz 2: Toplam {toplam_at} atın zeka havuzu oluşturuluyor...")
+
+        for i, at in enumerate(toplanan_atlar_ve_linkler):
+            # 🚨 YENİ: FAZ 2 (Geçmiş ve Galoplar) İlerlemesi (%25 ile %70 arası adım adım)
+            if ilerleme_fonksiyonu:
+                yuzde = 25 + int((i / max(1, toplam_at)) * 45)
+                ilerleme_fonksiyonu(yuzde, f"Veri Avı: {at['at_adi']} geçmişi/idmanı inceleniyor ({i+1}/{toplam_at})...")
+
             try:
                 driver.get(at['link'])
                 bekleme_kisa = WebDriverWait(driver, 4)
@@ -193,7 +204,8 @@ def tjk_veri_cek(tarih, hipodrom_adi):
                 
         conn.commit()
         conn.close()
+        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(70, "TJK Web Kazıma (Scraping) işlemi başarıyla tamamlandı.")
     except Exception as e:
-        print(f"[-] Genel Hata: {e}")
+        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(100, f"[-] Genel Hata: {e}")
     finally:
         driver.quit()
