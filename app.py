@@ -67,8 +67,8 @@ with tab_kontrol:
             conn = sqlite3.connect("tjk_arastirma_merkezi.db")
             cursor = conn.cursor()
             
-            # 🚨 SİGORTA KODU: TJK sitesi çökse bile tabloyu zorla oluşturur!
-            cursor.execute("CREATE TABLE IF NOT EXISTS Gunluk_AGF (yaris_id TEXT, at_adi TEXT, agf REAL)")
+            # SİGORTA KODU: TJK sitesi çökse bile tabloyu zorla oluşturur!
+            cursor.execute("CREATE TABLE IF NOT EXISTS Gunluk_AGF (yaris_id TEXT, at_adi TEXT, agf REAL, ganyan REAL)")
             conn.commit()
             
             cursor.execute("SELECT DISTINCT yaris_id FROM Sonuclar WHERE yaris_id LIKE ?", (f"{tarih_str}_{hipodrom}%",))
@@ -136,16 +136,25 @@ with tab_kontrol:
                     elif dinlenme > 60 and idman_sayisi < 3: ai_ham_olasilik *= 0.50
                     elif dinlenme < 7: ai_ham_olasilik *= 0.70
                     
-                    cursor.execute("SELECT agf FROM Gunluk_AGF WHERE yaris_id = ? AND at_adi = ?", (yaris_id, at_adi))
+                    # 🚨 YENİ VİZYON: Gerçek AGF ve TJK Ganyanı okuma!
+                    cursor.execute("SELECT agf, ganyan FROM Gunluk_AGF WHERE yaris_id = ? AND at_adi = ?", (yaris_id, at_adi))
                     agf_sorgu = cursor.fetchone()
+                    
                     agf_yuzde = float(agf_sorgu[0]) if agf_sorgu else 0.0
+                    gercek_ganyan_tjk = float(agf_sorgu[1]) if agf_sorgu and len(agf_sorgu) > 1 and agf_sorgu[1] is not None else 0.0
                     
                     if agf_yuzde > 0:
                         agf_olasilik = agf_yuzde / 100.0
                         final_olasilik = (ai_ham_olasilik * 0.70) + (agf_olasilik * 0.30)
-                        gercek_ganyan = 80.0 / agf_yuzde if agf_yuzde > 1.0 else 80.0
                     else:
                         final_olasilik = ai_ham_olasilik
+
+                    # Eğer TJK ganyanı da varsa doğrudan onu kullan, yoksa matematikle hesapla
+                    if gercek_ganyan_tjk > 0.0:
+                        gercek_ganyan = gercek_ganyan_tjk
+                    elif agf_yuzde > 0.0:
+                        gercek_ganyan = 80.0 / agf_yuzde if agf_yuzde > 1.0 else 80.0
+                    else:
                         gercek_ganyan = 0.0
                         
                     ayak_listesi.append({"at": at_adi, "olasilik": final_olasilik, "ganyan": gercek_ganyan, "ai_ham": ai_ham_olasilik, "agf": agf_yuzde})
