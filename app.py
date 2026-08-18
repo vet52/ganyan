@@ -38,12 +38,10 @@ with tab_kontrol:
 
     if baslat:
         durum_metni = st.empty()
-        # 🚨 YENİ: İçi metin dolu ilerleme çubuğu
         ilerleme_cubugu = st.progress(0, text="%0 - Sistem Başlatılıyor...")
         
-        # 🚨 YENİ: Callback (Geri Çağırım) Fonksiyonumuz
         def anlik_ilerleme(yuzde, mesaj):
-            guvenli_yuzde = max(0, min(100, int(yuzde))) # Yüzdeyi 0-100 arasında sabitler
+            guvenli_yuzde = max(0, min(100, int(yuzde)))
             ilerleme_cubugu.progress(guvenli_yuzde, text=f"%{guvenli_yuzde} - {mesaj}")
             durum_metni.info(mesaj)
         
@@ -53,7 +51,6 @@ with tab_kontrol:
             anlik_ilerleme(5, "Veritabanı bağlantıları kontrol ediliyor...")
             veritabani_kur()
             
-            # TJK Veri Çekme Motoruna "anlik_ilerleme" fonksiyonumuzu gönderiyoruz!
             tjk_veri_cek(tarih_str, hipodrom, anlik_ilerleme)
             
             anlik_ilerleme(72, "Veritabanından geçmiş koşular okunuyor ve JOKEY ZEKASI hesaba katılıyor...")
@@ -66,7 +63,7 @@ with tab_kontrol:
             anlik_ilerleme(75, f"Yapay Zeka ({model_tipi}) 14 Boyutlu Matris Üzerinden Öğreniyor...")
             yz_model = modeli_egit(X, y, model_tipi)
             
-            anlik_ilerleme(85, "Bugünkü koşular analiz ediliyor...")
+            anlik_ilerleme(85, "Hibrit Karar Mekanizması (Yapay Zeka + AGF) Başlatıldı...")
             
             conn = sqlite3.connect("tjk_arastirma_merkezi.db")
             cursor = conn.cursor()
@@ -80,7 +77,6 @@ with tab_kontrol:
             
             gercek_olasiliklar = []
             for index, kosu in enumerate(kosular[:6]):
-                # Her ayak analiz edildiğinde barı biraz daha doldur
                 anlik_ilerleme(85 + int((index/6)*10), f"Yapay Zeka {index+1}. Ayağı süzgeçten geçiriyor...")
                 
                 yaris_id = kosu[0]
@@ -129,21 +125,39 @@ with tab_kontrol:
                         columns=['mesafe', 'genel_kazanma_orani', 'toplam_kosu', 'son_3_derece_ort', 'dinlenme_gunu', 'kilo_farki', 'hp_farki', 'ort_hiz', 'max_hiz', 'kum_kazanma', 'cim_kazanma', 'sentetik_kazanma', 'son_1_ay_idman_sayisi', 'jokey_kazanma_orani']
                     )
                     
-                    ham_olasilik = yz_model.predict_proba(X_bugun)[0][1]
-                    if ham_olasilik == 0: ham_olasilik = 0.01 
+                    ai_ham_olasilik = yz_model.predict_proba(X_bugun)[0][1]
+                    if ai_ham_olasilik == 0: ai_ham_olasilik = 0.01 
                         
-                    if dinlenme > 120: ham_olasilik *= 0.30 
-                    elif dinlenme > 60 and idman_sayisi < 3: ham_olasilik *= 0.50
-                    elif dinlenme < 7: ham_olasilik *= 0.70
+                    if dinlenme > 120: ai_ham_olasilik *= 0.30 
+                    elif dinlenme > 60 and idman_sayisi < 3: ai_ham_olasilik *= 0.50
+                    elif dinlenme < 7: ai_ham_olasilik *= 0.70
+                    
+                    # 🚨 YENİ: HİBRİT KARAR MOTORU (AI + AGF) 🚨
+                    cursor.execute("SELECT agf FROM Gunluk_AGF WHERE yaris_id = ? AND at_adi = ?", (yaris_id, at_adi))
+                    agf_sorgu = cursor.fetchone()
+                    agf_yuzde = float(agf_sorgu[0]) if agf_sorgu else 0.0
+                    
+                    if agf_yuzde > 0:
+                        agf_olasilik = agf_yuzde / 100.0
+                        # Olasılığı %70 Yapay Zeka, %30 Halkın Aklı olarak belirliyoruz
+                        final_olasilik = (ai_ham_olasilik * 0.70) + (agf_olasilik * 0.30)
+                        # Gerçekçi Ganyan Projeksiyonu (80 / AGF)
+                        gercek_ganyan = 80.0 / agf_yuzde if agf_yuzde > 1.0 else 80.0
+                    else:
+                        final_olasilik = ai_ham_olasilik
+                        gercek_ganyan = 0.0 # Aşağıdaki blokta sistemin tahmini ganyanı devreye girecek
                         
-                    ayak_listesi.append({"at": at_adi, "olasilik": ham_olasilik, "ganyan": 0.0})
+                    ayak_listesi.append({"at": at_adi, "olasilik": final_olasilik, "ganyan": gercek_ganyan, "ai_ham": ai_ham_olasilik, "agf": agf_yuzde})
                     
                 toplam_olasilik = sum(at['olasilik'] for at in ayak_listesi)
                 if toplam_olasilik == 0: toplam_olasilik = 1.0 
                     
                 for at in ayak_listesi:
                     at['olasilik'] = at['olasilik'] / toplam_olasilik
-                    at['ganyan'] = (1.0 / at['olasilik']) * 0.75 if at['olasilik'] > 0 else 80.0
+                    # Eğer yarış sabahı AGF çekilememişse, sistem kendi tahmini ganyanını hesaplar
+                    if at['ganyan'] == 0.0:
+                        at['ganyan'] = (1.0 / at['olasilik']) * 0.75 if at['olasilik'] > 0 else 80.0
+                        
                     if at['ganyan'] > 80.0: at['ganyan'] = 80.0
                 
                 ayak_listesi = sorted(ayak_listesi, key=lambda x: x['olasilik'], reverse=True)
@@ -202,13 +216,17 @@ with tab_kontrol:
 # --- TAB 2: OLASILIK ANALİZİ ---
 with tab_analiz:
     if 'son_analiz' in st.session_state:
-        st.subheader(f"🐎 14 Boyutlu Yapay Zeka Raporu ({st.session_state['son_model_adi']})")
+        st.subheader(f"🐎 Hibrit Yapay Zeka Raporu ({st.session_state['son_model_adi']})")
+        st.markdown("*Olasılıklar %70 YZ, %30 TJK AGF oranlarının matematiksel harmanıdır.*")
         for i, ayak in enumerate(st.session_state['son_analiz']):
             st.markdown(f"#### {i+1}. AYAK")
             df = pd.DataFrame(ayak)
             df['olasilik'] = (df['olasilik'] * 100).round(2).astype(str) + " %"
+            df['agf'] = df['agf'].astype(str) + " %"
             df['ganyan'] = df['ganyan'].round(2)
-            df.columns = ["At Adı", "Y.Z. Güç Endeksi", "Beklenen Ganyan"]
+            # Rapor tablosuna AGF Oranını da ekliyoruz
+            df = df[["at", "olasilik", "agf", "ganyan"]]
+            df.columns = ["At Adı", "Hibrit Güç Endeksi", "TJK AGF Oranı", "Beklenen Ganyan"]
             df.index = df.index + 1
             st.dataframe(df, use_container_width=True)
     else:
