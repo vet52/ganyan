@@ -12,7 +12,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 
 def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
-    if ilerleme_fonksiyonu: ilerleme_fonksiyonu(10, "Hayalet Tarayıcı (Chrome) Başlatılıyor...")
+    if ilerleme_fonksiyonu: ilerleme_fonksiyonu(5, "Hayalet Tarayıcı (Chrome) Başlatılıyor...")
     
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
@@ -26,8 +26,8 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--disable-extensions")
     
+    # 🚨 BULUT (STREAMLIT CLOUD) UYUMLU SÜRÜCÜ
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
@@ -42,7 +42,7 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
         tjk_tarih_formati = f"{gun}/{ay}/{yil}"
         hedef_url = "https://www.tjk.org/TR/YarisSever/Info/Page/GunlukYarisProgrami"
         
-        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(12, f"TJK Sunucularına Bağlanılıyor: {hipodrom_adi}...")
+        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(10, f"TJK Sunucularına Bağlanılıyor: {hipodrom_adi}...")
         driver.get(hedef_url)
         time.sleep(2) 
         
@@ -69,13 +69,11 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
         cursor.execute("DELETE FROM Yarislar WHERE yaris_id LIKE ?", (f"{tarih}_{hipodrom_adi}%",))
         cursor.execute("DELETE FROM Sonuclar WHERE yaris_id LIKE ?", (f"{tarih}_{hipodrom_adi}%",))
         
-        # 🚨 YENİ: AGF Tablosu Hazırlığı
         cursor.execute("CREATE TABLE IF NOT EXISTS Gunluk_AGF (yaris_id TEXT, at_adi TEXT, agf REAL)")
         cursor.execute("DELETE FROM Gunluk_AGF WHERE yaris_id LIKE ?", (f"{tarih}_{hipodrom_adi}%",))
         conn.commit()
         
         toplanan_atlar_ve_linkler = []
-        kayit_sayisi = 0
         
         toplam_hedef_kosu = toplam_kosu - baslangic_indeksi
         for islem_sirasi, kosu_indeks in enumerate(range(baslangic_indeksi, toplam_kosu)):
@@ -129,20 +127,16 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     
                     if at_profil_linki != "Yok":
                         toplanan_atlar_ve_linkler.append({"at_adi": at_adi, "link": at_profil_linki, "yaris_id": yaris_id})
-                        
-                    kayit_sayisi += 1
-                except Exception as e:
+                except Exception:
                     continue
                 
         conn.commit()
 
         toplam_at = len(toplanan_atlar_ve_linkler)
-        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(25, f"Faz 2: Toplam {toplam_at} atın zeka havuzu oluşturuluyor...")
-
         for i, at in enumerate(toplanan_atlar_ve_linkler):
             if ilerleme_fonksiyonu:
                 yuzde = 25 + int((i / max(1, toplam_at)) * 40)
-                ilerleme_fonksiyonu(yuzde, f"Veri Avı: {at['at_adi']} geçmişi/idmanı inceleniyor ({i+1}/{toplam_at})...")
+                ilerleme_fonksiyonu(yuzde, f"Veri Avı: {at['at_adi']} inceleniyor ({i+1}/{toplam_at})...")
 
             try:
                 driver.get(at['link'])
@@ -182,14 +176,12 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     time.sleep(1) 
                     
                     idman_satirlari = driver.find_elements(By.XPATH, "//div[contains(@id, 'idman') or contains(@id, 'Idman')]//table//tbody/tr")
-                    
                     if not idman_satirlari:
                         idman_satirlari = driver.find_elements(By.XPATH, "//table[.//th[contains(text(), 'İdman')]]//tbody/tr")
 
                     for id_satir in idman_satirlari[:5]: 
                         i_hucreler = id_satir.find_elements(By.TAG_NAME, "td")
                         if len(i_hucreler) < 4: continue
-                        
                         i_tarih = i_hucreler[0].text.strip()
                         i_sehir = i_hucreler[1].text.strip()
                         i_mesafe = i_hucreler[2].text.strip()
@@ -202,10 +194,9 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                         """, (at['at_adi'], i_tarih, i_sehir, i_mesafe, i_sure, i_turu))
                 except Exception:
                     pass
-            except Exception as e:
+            except Exception:
                 continue
                 
-        # 🚨 YENİ: FAZ 4 - AGF VE GANYAN KAZIMA MERKEZİ 🚨
         if ilerleme_fonksiyonu: ilerleme_fonksiyonu(66, "Faz 4: TJK AGF (Müşterek Bahis) Oranları Çekiliyor...")
         try:
             driver.get("https://www.tjk.org/TR/YarisSever/Info/Page/Agf")
@@ -218,7 +209,6 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
             driver.execute_script("arguments[0].click();", hipodrom_sekmesi_agf)
             time.sleep(3)
             
-            # Pandas ile AGF sayfasındaki tüm tabloları süpürür
             html_source = driver.page_source
             dfs = pd.read_html(html_source)
             
@@ -230,7 +220,6 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     for row in df.itertuples(index=False):
                         satir_metni = ' '.join(map(str, row))
                         if at_adi_hedef in satir_metni:
-                            # Düzenli ifade ile "% 15.45" veya "%15,45" formatını yakalar
                             match = re.search(r'%\s*(\d+[,.]\d+)', satir_metni)
                             if match:
                                 agf_degeri = float(match.group(1).replace(',', '.'))
@@ -241,7 +230,7 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     cursor.execute("INSERT INTO Gunluk_AGF (yaris_id, at_adi, agf) VALUES (?, ?, ?)", (at_dict['yaris_id'], at_adi_hedef, agf_degeri))
                     
         except Exception as e:
-            print(f"AGF Çekilemedi (Yarış sabahı henüz açıklanmamış olabilir): {e}")
+            print(f"AGF Çekilemedi (Yarış sabahı henüz açıklanmamış olabilir veya tablo yapısı hatalı): {e}")
 
         conn.commit()
         conn.close()
