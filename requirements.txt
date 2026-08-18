@@ -4,3 +4,4 @@ selenium
 webdriver-manager
 xgboost
 scikit-learn
+lxml
