@@ -26,7 +26,6 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
     chrome_options.add_experimental_option('useAutomationExtension', False)
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     
-    # BULUT (STREAMLIT CLOUD) UYUMLU SÜRÜCÜ
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
@@ -87,19 +86,19 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
             
             guncel_tablo = driver.find_elements(By.XPATH, "//table[.//td[contains(@class, 'AtAdi')]]")[kosu_indeks]
             
-            # 🚨 YENİ: RÖNTGEN GÖRÜŞÜ (OuterHTML)
-            # Sadece görünen metne değil, HTML'in içindeki title, class ve gizli kodlara da bakarak AGF sütununu şaşmaz bir şekilde bulur!
+            # 🚨 YENİ: AGF VE GANYAN SÜTUNLARINI LİSTEYE TOPLUYORUZ
+            # Eğer 2 farklı AGF sütunu varsa ikisini de aklında tutacak.
             basliklar = guncel_tablo.find_elements(By.XPATH, ".//th")
-            agf_index = -1
-            gny_index = -1
+            agf_indices = []
+            gny_indices = []
             
             for idx, th in enumerate(basliklar):
                 try:
                     html_icerik = th.get_attribute("outerHTML").upper()
                     if "AGF" in html_icerik: 
-                        agf_index = idx
+                        agf_indices.append(idx)
                     if "GNY" in html_icerik or "GANYAN" in html_icerik: 
-                        gny_index = idx
+                        gny_indices.append(idx)
                 except:
                     pass
             
@@ -122,19 +121,32 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     
                     hucreler = satir.find_elements(By.TAG_NAME, "td")
                     
-                    # 🚨 YENİ: HEM TAM SAYI HEM KÜSURAT OKUYAN KUSURSUZ REGEX
+                    # 🚨 YENİ: ZEKİ AGF SEÇİCİ KOD (2. ALTILI GARANTİSİ)
                     agf_degeri = 0.0
                     gny_degeri = 0.0
                     
-                    if agf_index != -1 and len(hucreler) > agf_index:
-                        agf_text = hucreler[agf_index].text.strip()
-                        match = re.search(r'(\d+(?:[,.]\d+)?)', agf_text)
-                        if match: agf_degeri = float(match.group(1).replace(',', '.'))
-                            
-                    if gny_index != -1 and len(hucreler) > gny_index:
-                        gny_text = hucreler[gny_index].text.strip()
-                        match = re.search(r'(\d+(?:[,.]\d+)?)', gny_text)
-                        if match: gny_degeri = float(match.group(1).replace(',', '.'))
+                    tum_agf_degerleri = []
+                    for a_idx in agf_indices:
+                        if len(hucreler) > a_idx:
+                            agf_text = hucreler[a_idx].text.strip()
+                            matches = re.findall(r'(\d+(?:[,.]\d+)?)', agf_text)
+                            for m in matches:
+                                tum_agf_degerleri.append(float(m.replace(',', '.')))
+                    
+                    if tum_agf_degerleri:
+                        # Tabloda veya hücrede kaç tane AGF olursa olsun, her zaman EN SONDAKİNİ alır! (2. Altılı)
+                        agf_degeri = tum_agf_degerleri[-1] 
+                        
+                    tum_gny_degerleri = []
+                    for g_idx in gny_indices:
+                        if len(hucreler) > g_idx:
+                            gny_text = hucreler[g_idx].text.strip()
+                            matches = re.findall(r'(\d+(?:[,.]\d+)?)', gny_text)
+                            for m in matches:
+                                tum_gny_degerleri.append(float(m.replace(',', '.')))
+                                
+                    if tum_gny_degerleri:
+                        gny_degeri = tum_gny_degerleri[-1]
                             
                     if agf_degeri > 0 or gny_degeri > 0:
                         cursor.execute("INSERT INTO Gunluk_AGF (yaris_id, at_adi, agf, ganyan) VALUES (?, ?, ?, ?)", (yaris_id, at_adi, agf_degeri, gny_degeri))
