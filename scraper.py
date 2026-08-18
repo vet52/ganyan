@@ -86,8 +86,6 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
             
             guncel_tablo = driver.find_elements(By.XPATH, "//table[.//td[contains(@class, 'AtAdi')]]")[kosu_indeks]
             
-            # 🚨 YENİ: AGF VE GANYAN SÜTUNLARINI LİSTEYE TOPLUYORUZ
-            # Eğer 2 farklı AGF sütunu varsa ikisini de aklında tutacak.
             basliklar = guncel_tablo.find_elements(By.XPATH, ".//th")
             agf_indices = []
             gny_indices = []
@@ -121,7 +119,7 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     
                     hucreler = satir.find_elements(By.TAG_NAME, "td")
                     
-                    # 🚨 YENİ: ZEKİ AGF SEÇİCİ KOD (2. ALTILI GARANTİSİ)
+                    # 🚨 YENİ: ZEKİ AGF SEÇİCİ KOD (Sıralama Tuzağını Atlar) 🚨
                     agf_degeri = 0.0
                     gny_degeri = 0.0
                     
@@ -129,24 +127,22 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     for a_idx in agf_indices:
                         if len(hucreler) > a_idx:
                             agf_text = hucreler[a_idx].text.strip()
-                            matches = re.findall(r'(\d+(?:[,.]\d+)?)', agf_text)
+                            # DİKKAT: Sadece "%" işaretinden hemen sonra gelen rakamları alır.
+                            matches = re.findall(r'%\s*(\d+(?:[,.]\d+)?)', agf_text)
                             for m in matches:
                                 tum_agf_degerleri.append(float(m.replace(',', '.')))
                     
                     if tum_agf_degerleri:
-                        # Tabloda veya hücrede kaç tane AGF olursa olsun, her zaman EN SONDAKİNİ alır! (2. Altılı)
+                        # Eğer 2 altılı varsa (-1) ile her zaman 2. altılının yüzdesini alır.
                         agf_degeri = tum_agf_degerleri[-1] 
                         
-                    tum_gny_degerleri = []
                     for g_idx in gny_indices:
                         if len(hucreler) > g_idx:
                             gny_text = hucreler[g_idx].text.strip()
                             matches = re.findall(r'(\d+(?:[,.]\d+)?)', gny_text)
-                            for m in matches:
-                                tum_gny_degerleri.append(float(m.replace(',', '.')))
-                                
-                    if tum_gny_degerleri:
-                        gny_degeri = tum_gny_degerleri[-1]
+                            if matches:
+                                # Ganyan yarış başına tek bir orandır, ilk bulduğunu almak yeterlidir.
+                                gny_degeri = float(matches[0].replace(',', '.'))
                             
                     if agf_degeri > 0 or gny_degeri > 0:
                         cursor.execute("INSERT INTO Gunluk_AGF (yaris_id, at_adi, agf, ganyan) VALUES (?, ?, ?, ?)", (yaris_id, at_adi, agf_degeri, gny_degeri))
