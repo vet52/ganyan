@@ -17,7 +17,6 @@ st.markdown("Veri bilimi ve makine öğrenmesi destekli profesyonel altılı gan
 
 tab_kontrol, tab_analiz, tab_gecmis = st.tabs(["⚙️ Kontrol Paneli", "📊 Olasılık Analizi", "📜 Kupon Geçmişi"])
 
-# --- TAB 1: KONTROL PANELİ ---
 with tab_kontrol:
     with st.form("kontrol_formu"):
         col1, col2 = st.columns(2)
@@ -60,13 +59,18 @@ with tab_kontrol:
                 st.error("❌ Model eğitimi için havuzda yeterli veri bulunamadı.")
                 st.stop()
                 
-            anlik_ilerleme(75, f"Yapay Zeka ({model_tipi}) 14 Boyutlu Matris Üzerinden Öğreniyor...")
+            anlik_ilerleme(75, f"Yapay Zeka ({model_tipi}) Öğreniyor...")
             yz_model = modeli_egit(X, y, model_tipi)
             
             anlik_ilerleme(85, "Hibrit Karar Mekanizması (Yapay Zeka + AGF) Başlatıldı...")
             
             conn = sqlite3.connect("tjk_arastirma_merkezi.db")
             cursor = conn.cursor()
+            
+            # 🚨 SİGORTA KODU: TJK sitesi çökse bile tabloyu zorla oluşturur!
+            cursor.execute("CREATE TABLE IF NOT EXISTS Gunluk_AGF (yaris_id TEXT, at_adi TEXT, agf REAL)")
+            conn.commit()
+            
             cursor.execute("SELECT DISTINCT yaris_id FROM Sonuclar WHERE yaris_id LIKE ?", (f"{tarih_str}_{hipodrom}%",))
             kosular = cursor.fetchall()
             
@@ -132,20 +136,17 @@ with tab_kontrol:
                     elif dinlenme > 60 and idman_sayisi < 3: ai_ham_olasilik *= 0.50
                     elif dinlenme < 7: ai_ham_olasilik *= 0.70
                     
-                    # 🚨 YENİ: HİBRİT KARAR MOTORU (AI + AGF) 🚨
                     cursor.execute("SELECT agf FROM Gunluk_AGF WHERE yaris_id = ? AND at_adi = ?", (yaris_id, at_adi))
                     agf_sorgu = cursor.fetchone()
                     agf_yuzde = float(agf_sorgu[0]) if agf_sorgu else 0.0
                     
                     if agf_yuzde > 0:
                         agf_olasilik = agf_yuzde / 100.0
-                        # Olasılığı %70 Yapay Zeka, %30 Halkın Aklı olarak belirliyoruz
                         final_olasilik = (ai_ham_olasilik * 0.70) + (agf_olasilik * 0.30)
-                        # Gerçekçi Ganyan Projeksiyonu (80 / AGF)
                         gercek_ganyan = 80.0 / agf_yuzde if agf_yuzde > 1.0 else 80.0
                     else:
                         final_olasilik = ai_ham_olasilik
-                        gercek_ganyan = 0.0 # Aşağıdaki blokta sistemin tahmini ganyanı devreye girecek
+                        gercek_ganyan = 0.0
                         
                     ayak_listesi.append({"at": at_adi, "olasilik": final_olasilik, "ganyan": gercek_ganyan, "ai_ham": ai_ham_olasilik, "agf": agf_yuzde})
                     
@@ -154,7 +155,6 @@ with tab_kontrol:
                     
                 for at in ayak_listesi:
                     at['olasilik'] = at['olasilik'] / toplam_olasilik
-                    # Eğer yarış sabahı AGF çekilememişse, sistem kendi tahmini ganyanını hesaplar
                     if at['ganyan'] == 0.0:
                         at['ganyan'] = (1.0 / at['olasilik']) * 0.75 if at['olasilik'] > 0 else 80.0
                         
@@ -213,7 +213,6 @@ with tab_kontrol:
             hata_detayi = traceback.format_exc()
             st.error(f"❌ SİSTEM ÇÖKTÜ: {hata_detayi}")
 
-# --- TAB 2: OLASILIK ANALİZİ ---
 with tab_analiz:
     if 'son_analiz' in st.session_state:
         st.subheader(f"🐎 Hibrit Yapay Zeka Raporu ({st.session_state['son_model_adi']})")
@@ -224,7 +223,6 @@ with tab_analiz:
             df['olasilik'] = (df['olasilik'] * 100).round(2).astype(str) + " %"
             df['agf'] = df['agf'].astype(str) + " %"
             df['ganyan'] = df['ganyan'].round(2)
-            # Rapor tablosuna AGF Oranını da ekliyoruz
             df = df[["at", "olasilik", "agf", "ganyan"]]
             df.columns = ["At Adı", "Hibrit Güç Endeksi", "TJK AGF Oranı", "Beklenen Ganyan"]
             df.index = df.index + 1
@@ -232,7 +230,6 @@ with tab_analiz:
     else:
         st.info("Sistem analiz için emrinizi bekliyor...")
 
-# --- TAB 3: KUPON GEÇMİŞİ ---
 with tab_gecmis:
     if st.button("🔄 Geçmişi Yenile"):
         st.rerun()
