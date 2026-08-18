@@ -26,6 +26,7 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
     chrome_options.add_experimental_option('useAutomationExtension', False)
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     
+    # BULUT (STREAMLIT CLOUD) UYUMLU SÜRÜCÜ
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
@@ -86,14 +87,21 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
             
             guncel_tablo = driver.find_elements(By.XPATH, "//table[.//td[contains(@class, 'AtAdi')]]")[kosu_indeks]
             
-            # 🚨 YENİ VİZYON: Tablo Başlıklarını (th) okuyup AGF ve Ganyan'ın kaçıncı sütunda olduğunu dinamik buluyoruz!
+            # 🚨 YENİ: RÖNTGEN GÖRÜŞÜ (OuterHTML)
+            # Sadece görünen metne değil, HTML'in içindeki title, class ve gizli kodlara da bakarak AGF sütununu şaşmaz bir şekilde bulur!
             basliklar = guncel_tablo.find_elements(By.XPATH, ".//th")
-            baslik_isimleri = [th.text.strip().upper() for th in basliklar]
             agf_index = -1
             gny_index = -1
-            for idx, b in enumerate(baslik_isimleri):
-                if "AGF" in b: agf_index = idx
-                if "GNY" in b or "GANYAN" in b: gny_index = idx
+            
+            for idx, th in enumerate(basliklar):
+                try:
+                    html_icerik = th.get_attribute("outerHTML").upper()
+                    if "AGF" in html_icerik: 
+                        agf_index = idx
+                    if "GNY" in html_icerik or "GANYAN" in html_icerik: 
+                        gny_index = idx
+                except:
+                    pass
             
             satir_sayisi = len(guncel_tablo.find_elements(By.XPATH, ".//tr[td[contains(@class, 'AtAdi')]]"))
             
@@ -114,18 +122,18 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     
                     hucreler = satir.find_elements(By.TAG_NAME, "td")
                     
-                    # 🚨 DİNAMİK AGF VE GANYAN ÇEKİMİ
+                    # 🚨 YENİ: HEM TAM SAYI HEM KÜSURAT OKUYAN KUSURSUZ REGEX
                     agf_degeri = 0.0
                     gny_degeri = 0.0
                     
                     if agf_index != -1 and len(hucreler) > agf_index:
                         agf_text = hucreler[agf_index].text.strip()
-                        match = re.search(r'(\d+[,.]\d+)', agf_text)
+                        match = re.search(r'(\d+(?:[,.]\d+)?)', agf_text)
                         if match: agf_degeri = float(match.group(1).replace(',', '.'))
                             
                     if gny_index != -1 and len(hucreler) > gny_index:
                         gny_text = hucreler[gny_index].text.strip()
-                        match = re.search(r'(\d+[,.]\d+)', gny_text)
+                        match = re.search(r'(\d+(?:[,.]\d+)?)', gny_text)
                         if match: gny_degeri = float(match.group(1).replace(',', '.'))
                             
                     if agf_degeri > 0 or gny_degeri > 0:
@@ -160,7 +168,7 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
         toplam_at = len(toplanan_atlar_ve_linkler)
         for i, at in enumerate(toplanan_atlar_ve_linkler):
             if ilerleme_fonksiyonu:
-                yuzde = 25 + int((i / max(1, toplam_at)) * 70) # Yüzdelik barı artık sonuna kadar (Faz 4 olmadan) dolduruyor
+                yuzde = 25 + int((i / max(1, toplam_at)) * 70) 
                 ilerleme_fonksiyonu(yuzde, f"Faz 2: {at['at_adi']} derin analizi ({i+1}/{toplam_at})...")
 
             try:
