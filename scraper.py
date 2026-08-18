@@ -1,6 +1,8 @@
 import sqlite3
 import time
 import random
+import re
+import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -9,7 +11,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 
-# 🚨 YENİ: "ilerleme_fonksiyonu" parametresi eklendi
 def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
     if ilerleme_fonksiyonu: ilerleme_fonksiyonu(10, "Hayalet Tarayıcı (Chrome) Başlatılıyor...")
     
@@ -67,6 +68,10 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
         
         cursor.execute("DELETE FROM Yarislar WHERE yaris_id LIKE ?", (f"{tarih}_{hipodrom_adi}%",))
         cursor.execute("DELETE FROM Sonuclar WHERE yaris_id LIKE ?", (f"{tarih}_{hipodrom_adi}%",))
+        
+        # 🚨 YENİ: AGF Tablosu Hazırlığı
+        cursor.execute("CREATE TABLE IF NOT EXISTS Gunluk_AGF (yaris_id TEXT, at_adi TEXT, agf REAL)")
+        cursor.execute("DELETE FROM Gunluk_AGF WHERE yaris_id LIKE ?", (f"{tarih}_{hipodrom_adi}%",))
         conn.commit()
         
         toplanan_atlar_ve_linkler = []
@@ -77,7 +82,6 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
             gercek_kosu_no = kosu_indeks + 1
             yaris_id = f"{tarih}_{hipodrom_adi}_K{gercek_kosu_no}"
             
-            # 🚨 YENİ: FAZ 1 (Koşular) İlerlemesi (%15 ile %25 arası)
             if ilerleme_fonksiyonu: 
                 yuzde = 15 + int((islem_sirasi / max(1, toplam_hedef_kosu)) * 10)
                 ilerleme_fonksiyonu(yuzde, f"Faz 1: {islem_sirasi+1}. Ayak bülteni çekiliyor...")
@@ -124,7 +128,7 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
                     """, (yaris_id, at_adi, b_jokey, b_kilo, b_hp, random.choice([0, 0, 0, 0, 1]), at_profil_linki))
                     
                     if at_profil_linki != "Yok":
-                        toplanan_atlar_ve_linkler.append({"at_adi": at_adi, "link": at_profil_linki})
+                        toplanan_atlar_ve_linkler.append({"at_adi": at_adi, "link": at_profil_linki, "yaris_id": yaris_id})
                         
                     kayit_sayisi += 1
                 except Exception as e:
@@ -136,9 +140,8 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
         if ilerleme_fonksiyonu: ilerleme_fonksiyonu(25, f"Faz 2: Toplam {toplam_at} atın zeka havuzu oluşturuluyor...")
 
         for i, at in enumerate(toplanan_atlar_ve_linkler):
-            # 🚨 YENİ: FAZ 2 (Geçmiş ve Galoplar) İlerlemesi (%25 ile %70 arası adım adım)
             if ilerleme_fonksiyonu:
-                yuzde = 25 + int((i / max(1, toplam_at)) * 45)
+                yuzde = 25 + int((i / max(1, toplam_at)) * 40)
                 ilerleme_fonksiyonu(yuzde, f"Veri Avı: {at['at_adi']} geçmişi/idmanı inceleniyor ({i+1}/{toplam_at})...")
 
             try:
@@ -202,6 +205,44 @@ def tjk_veri_cek(tarih, hipodrom_adi, ilerleme_fonksiyonu=None):
             except Exception as e:
                 continue
                 
+        # 🚨 YENİ: FAZ 4 - AGF VE GANYAN KAZIMA MERKEZİ 🚨
+        if ilerleme_fonksiyonu: ilerleme_fonksiyonu(66, "Faz 4: TJK AGF (Müşterek Bahis) Oranları Çekiliyor...")
+        try:
+            driver.get("https://www.tjk.org/TR/YarisSever/Info/Page/Agf")
+            time.sleep(2)
+            driver.execute_script(f"document.getElementById('QueryParameter_Tarih').value = '{tjk_tarih_formati}';")
+            driver.execute_script("$('#ajaxForm').submit();")
+            time.sleep(4)
+            
+            hipodrom_sekmesi_agf = wait.until(EC.element_to_be_clickable((By.XPATH, f"//a[contains(text(), '{hipodrom_adi}')]")))
+            driver.execute_script("arguments[0].click();", hipodrom_sekmesi_agf)
+            time.sleep(3)
+            
+            # Pandas ile AGF sayfasındaki tüm tabloları süpürür
+            html_source = driver.page_source
+            dfs = pd.read_html(html_source)
+            
+            for at_dict in toplanan_atlar_ve_linkler:
+                at_adi_hedef = at_dict['at_adi']
+                agf_degeri = 0.0
+                
+                for df in dfs:
+                    for row in df.itertuples(index=False):
+                        satir_metni = ' '.join(map(str, row))
+                        if at_adi_hedef in satir_metni:
+                            # Düzenli ifade ile "% 15.45" veya "%15,45" formatını yakalar
+                            match = re.search(r'%\s*(\d+[,.]\d+)', satir_metni)
+                            if match:
+                                agf_degeri = float(match.group(1).replace(',', '.'))
+                                break
+                    if agf_degeri > 0: break
+                
+                if agf_degeri > 0:
+                    cursor.execute("INSERT INTO Gunluk_AGF (yaris_id, at_adi, agf) VALUES (?, ?, ?)", (at_dict['yaris_id'], at_adi_hedef, agf_degeri))
+                    
+        except Exception as e:
+            print(f"AGF Çekilemedi (Yarış sabahı henüz açıklanmamış olabilir): {e}")
+
         conn.commit()
         conn.close()
         if ilerleme_fonksiyonu: ilerleme_fonksiyonu(70, "TJK Web Kazıma (Scraping) işlemi başarıyla tamamlandı.")
